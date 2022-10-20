@@ -11,7 +11,8 @@ Requirement: formulate a clear and concise question to answer and conduct data w
 library(readxl)
 library(plyr)
 library(dplyr)
-
+library(skimr)
+library(ggplot2)
 ```
 
 Introduction: 
@@ -22,37 +23,31 @@ Method (put down step by step, plots):
 ```{r, import raw data}
 metaair <- readRDS("/Users/yiping/Desktop/Epi research/OneDrive - University of Southern California/MetaChem/metaair.rds")
 UPFMean_grams <- read_excel("/Users/yiping/Desktop/Epi research/USC-Liz/independent research - UPF/UPF% calculation2/UPFgrams_baseline.xlsx")
-
 ```
 
 ```{r, data wrangling: extract variables and make a subset}
-myvars <- c("ID", "cage", "male", "race2", "diabetesbinary",
-            "gluc_fasting", "gluc_120min", "hba1c", "HEI", "MDS", "DII", "DASH")
-
+myvars <- c("ID", "cage", "male", "race2", "bmiclass", "diabetesbinary", "gluc_fasting", "gluc_120min", "hba1c")
 subsetmetachem <- metaair[myvars]
-
 ```
 
 ```{r, data wrangling: change names of categorical varialbes into numbers}
 subsetmetachem$race2 <- revalue(subsetmetachem$race2, c("White"="1", "Hispanic"="2", "Other"="3"))
-
 subsetmetachem$diabetesbinary <- revalue(subsetmetachem$diabetesbinary, c("no diabetes"="0", "T2D or prediabetes"="1"))
-
+subsetmetachem$bmiclass <- revalue(subsetmetachem$bmiclass, c("Normal"="1", "Overweight"="2", "Obese"="3"))
 ```
 
 ```{r, data wrangling: merge datasets}
 vars <- merge(subsetmetachem, UPFMean_grams)
-
 ```
 
 ```{r, data wrangling: make nnumeric variables into categorical variables}
-vars$UPFcat <- cut(vars$UPFpercentage_mean,
-                        breaks=c(0, 75, 100),
-                        labels=c("0", "1"))
-
-vars$UPFquart <- cut(vars$UPFpercentage_mean,
+vars$UPF_quart <- cut(vars$UPFpercentage_mean,
                           breaks=c(0, 25, 50, 75, 100),
                           labels=c("1", "2", "3", "4"))
+
+vars$UPF_cat <- cut(vars$UPFpercentage_mean,
+                             breaks=c(0, 75, 100),
+                             labels=c("0", "1"))
 
 ```
 
@@ -60,48 +55,129 @@ vars$UPFquart <- cut(vars$UPFpercentage_mean,
 names(vars)[2] <- "Age"
 names(vars)[3] <- "Male"
 names(vars)[4] <- "Race"
-names(vars)[5] <- "DiabetesCat"
-names(vars)[6] <- "Gluc_Fasting"
-names(vars)[7] <- "Gluc_120min"
-names(vars)[8] <- "HbA1C"
-
+names(vars)[5] <- "BMI"
+names(vars)[6] <-  "Diabetes_cat"
+names(vars)[7] <- "Gluc_Fasting"
+names(vars)[8] <- "Gluc_120min"
+names(vars)[9] <- "HbA1C"
 ```
 
 EDA: 
-```{r, check for missing values, remove age <18, T2DM NA variables}
-#skimr package
-
+```{r, check for missing values, T2DM related all contain 1 missing variable, get rid of 1 outlier}
 vars <- vars %>%
-  filter(!is.na(DiabetesCat))
+  filter(!is.na(Diabetes_cat)) %>%
+  filter(Gluc_Fasting < 200) %>%
+  filter(Gluc_120min < 400)
+```
 
+```{r, summary table glu-fasting and glu120min vs UPF_quart}
+table1 <- vars %>%
+  group_by(UPF_quart) %>%
+  summarise(
+    Gluc_Fasting_min = min(Gluc_Fasting),
+    Gluc_Fasting_max = max(Gluc_Fasting),
+    Gluc_120min_min = min(Gluc_120min),
+    GLuc_120min_max = max(Gluc_120min),
+    Gluc_num = n(),
+  )
+knitr::kable(table1)
+```
+
+```{r, summary table glu-fasting and glu120min vs. BMI}
+table2 <- vars %>%
+  group_by(BMI) %>%
+  summarise(
+    Gluc_Fasting_min = min(Gluc_Fasting),
+    Gluc_Fasting_max = max(Gluc_Fasting),
+    Gluc_120min_min = min(Gluc_120min),
+    GLuc_120min_max = max(Gluc_120min),
+    Gluc_num = n(),
+  )
+knitr::kable(table2)
+```
+
+```{r, barchart, glu_fasting/120mins by UPFcat+BMI}
 vars <- vars %>%
-  filter(Age > 18)
+  mutate(UPF_BMI = factor(
+    case_when(UPF_cat == 0 & BMI == 1 ~ "Low UPF Normal Weight",
+              UPF_cat == 0 & BMI == 2 ~ "Low UPF Overweight",
+              UPF_cat == 0 & BMI == 3 ~ "Low UPF Obese",
+              UPF_cat == 1 & BMI == 1 ~ "Low UPF Normal Weight",
+              UPF_cat == 1 & BMI == 2 ~ "Low UPF Overweight",
+              UPF_cat == 1 & BMI == 3 ~ "Low UPF Obese")
+  ))
 
+vars<- vars %>%
+  filter(!is.na(UPF_BMI))
 ```
 
 Data Visualization: 
-```{r, histogram, glu-fasting/120mins by UPFquart}
+```{r, histogram, glu-fasting/120mins by UPF_quart}
+vars %>%
+  ggplot(aes(x = Gluc_Fasting, fill = UPF_quart)) +
+  geom_histogram(position = "identity", alpha = 0.5) +
+  labs(title = "Fasting Glucose by UPF Quartiles", x = "Fasting Glucose", fill = "UPF")
+
+vars %>%
+  ggplot(aes(x = Gluc_120min, fill = UPF_quart)) +
+  geom_histogram(position = "identity", alpha = 0.5) +
+  labs(title = "Glucose after 120mins by UPF Quartiles", x = "Glucose after 120mins", fill = "UPF")
+  
+```
+
+```{r, histogram, glu_fasting/120mins by BMI}
+vars %>%
+  ggplot(aes(x = Gluc_Fasting, fill = BMI)) +
+  geom_histogram(position = "identity", alpha = 0.5) +
+  labs(title = "Fasting Glucose by BMI", x = "Fasting Glucose", fill = "BMI")
+
+vars %>%
+  ggplot(aes(x = Gluc_120min, fill = BMI)) +
+  geom_histogram(position = "identity", alpha = 0.5) +
+  labs(title = "Glucose after 120mins by BMI", x = "Glucose after 120mins", fill = "BMI")
+  
+```
+
+```{r, barchart, UPF_BMI by UPF_quart, cont}
+vars %>%
+  ggplot(aes(x = UPF_BMI, fill = UPF_quart)) +
+  geom_bar() +
+  labs(title = "UPF binary and BMI combined by UPF Quartile", x = "UPF_BMI", fill = "UPF Quartile")
 
 ```
 
-```{r, histogram, glu_fasting/120mins by UPFcat}
+```{r, statistical summary graph, glu-fasting/120mins by UPF_quart and BMI}
+vars %>%
+  ggplot() +
+  stat_summary(mapping = aes(x = UPF_quart, y = Gluc_Fasting),
+               fun.min = min,
+               fun.max = max, 
+               fun = median) + 
+  labs(title = "Statistical Summary of Fasting GLucose by UPF Quartiles", x = "UPF Quartiles", y = "Fasting Glucose")
 
-```
+vars %>%
+  ggplot() +
+  stat_summary(mapping = aes(x = UPF_quart, y = Gluc_120min),
+               fun.min = min,
+               fun.max = max, 
+               fun = median) + 
+  labs(title = "Statistical Summary of Fasting GLucose by UPF Quartiles", x = "UPF Quartiles", y = "Glucose after 120mins")
 
-```{r, barchart, glu_fasting/120mins by UPFcat+sex --> 4 cats}
+vars %>%
+  ggplot() +
+  stat_summary(mapping = aes(x = BMI, y = Gluc_Fasting),
+               fun.min = min,
+               fun.max = max, 
+               fun = median) + 
+  labs(title = "Statistical Summary of Fasting GLucose by UPF Quartiles", x = "BMI", y = "Fasting Glucose")
 
-```
-
-```{r, barchart, glu_fasting/120mins by UPFcat+race --> 6 cats}
-
-```
-
-```{r, statistical summary graph, }
-
-```
-
-```{r, summary table should include sample size}
-
+vars %>%
+  ggplot() +
+  stat_summary(mapping = aes(x = BMI, y = Gluc_120min),
+               fun.min = min,
+               fun.max = max, 
+               fun = median) + 
+  labs(title = "Statistical Summary of Fasting GLucose by UPF Quartiles", x = "BMI", y = "Glucose after 120mins")
 ```
 
 Conclusion:
