@@ -1,5 +1,5 @@
 ---
-title: "Midterm"
+title: "Midterm" 
 author: "Yiping Li"
 output: github_document
 date: "`r Sys.Date()`" 
