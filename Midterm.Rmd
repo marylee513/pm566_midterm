@@ -1,6 +1,6 @@
 ---
 title: "Midterm"
-author: "Yiping Li" 
+author: "Yiping Li"
 output: github_document
 date: "`r Sys.Date()`" 
 always_allow_html: true
